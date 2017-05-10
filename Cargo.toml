@@ -16,6 +16,12 @@ include = [
     "Cargo.toml",
 ]
 
+[profile.release]
+lto = true
+opt-level = "s"
+panic = "abort"
+debug = false
+
 [dependencies]
 clap = "2.20"
 derive-error = "0.0.3"
