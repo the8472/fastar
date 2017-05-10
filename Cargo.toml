@@ -9,6 +9,12 @@ readme = "README.md"
 categories = ["command-line-utilities", "filesystem"]
 license = "GPL-3.0"
 
+include = [
+    "**/*.rs",
+    "README.md",
+    "LICENCE",
+    "Cargo.toml",
+]
 
 [dependencies]
 clap = "2.20"
