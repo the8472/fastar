@@ -15,6 +15,7 @@ Current limitations:
 
 * arguments must be directories
 * only archives regular files, not symlinks
+* filenames longer than 100 bytes are not supported (implementation isn't difficult, just the `tar-rs` API being clunky)
 
 ## Benchmarks
 
