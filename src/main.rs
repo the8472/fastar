@@ -81,7 +81,10 @@ fn process_args() -> std::result::Result<(), CliError> {
     loop {
         match reap.next() {
             None => break,
-            Some(mut reader) => {
+            Some(Err(e)) => {
+                writeln!(std::io::stderr(),"{}", e.description()).unwrap();
+            }
+            Some(Ok(mut reader)) => {
                 let mut p = reader.path().to_owned();
                 //writeln!(std::io::stderr(), "before strip {}", p.to_string_lossy())?;
                 for path in &starting_points {
