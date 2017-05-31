@@ -14,6 +14,7 @@ include = [
     "README.md",
     "LICENCE",
     "Cargo.toml",
+    "Cargo.lock"
 ]
 
 [profile.release]
