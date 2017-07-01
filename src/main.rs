@@ -25,24 +25,30 @@ extern crate alloc_system;
 extern crate reapfrog;
 extern crate platter_walk;
 extern crate tar;
+extern crate nix;
 
 use std::error::Error;
 use std::io::*;
 use std::path::Path;
 use clap::{Arg, App};
 use platter_walk::*;
+use std::fs::File;
 use tar::{Builder, Header, HeaderMode};
+use std::os::unix::io::{FromRawFd, AsRawFd};
 
 #[derive(Debug, Error)]
 enum CliError {
-    Io(std::io::Error)
+    Io(std::io::Error),
+    Nix(nix::Error),
+    OutputIsATty
 }
 
 
 fn process_args() -> std::result::Result<(), CliError> {
-    let matches = App::new("fast file counting")
+    let matches = App::new("fast tar archive creator")
         .version(crate_version!())
         .arg(Arg::with_name("ord").long("leaf-order").required(false).takes_value(true).possible_values(&["inode","content", "dentry"]).help("optimize order for listing/stat/reads"))
+        .arg(Arg::with_name("out").short("f").required(false).takes_value(true).help("write output to file instead of stdout"))
         .arg(Arg::with_name("dirs").index(1).multiple(true).required(false).help("directories to traverse [default: cwd]"))
         .get_matches();
 
@@ -74,9 +80,18 @@ fn process_args() -> std::result::Result<(), CliError> {
     let mut reap = reapfrog::MultiFileReadahead::new(it);
     reap.dropbehind(true);
 
-    let out = std::io::stdout();
-    let locked = out.lock();
-    let mut builder = Builder::new(locked);
+    const STDOUT : i32 = 1;
+
+    let out = match matches.value_of("out") {
+        Some(s) => std::fs::OpenOptions::new().create(true).write(true).open(s)?,
+        None => unsafe { File::from_raw_fd(STDOUT) }
+    };
+
+    if nix::unistd::isatty(out.as_raw_fd())? {
+        return Err(CliError::OutputIsATty)
+    }
+
+    let mut builder = Builder::new(BufWriter::new(out));
 
     loop {
         match reap.next() {
@@ -96,9 +111,8 @@ fn process_args() -> std::result::Result<(), CliError> {
 
                 let mut header = Header::new_gnu();
                 header.set_metadata_in_mode(&reader.metadata(), HeaderMode::Deterministic);
-                header.set_path(p)?;
                 header.set_cksum();
-                builder.append(&header, &mut reader)?
+                builder.append_data(&mut header, &p, &mut reader)?
             }
         }
 

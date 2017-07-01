@@ -1,6 +1,6 @@
 [package]
 name = "fastar"
-version = "0.1.3"
+version = "0.1.4"
 authors = ["The8472"]
 description = "Fast tar archive creation for HDDs"
 keywords = ["linux", "cli", "tar", "archive"]
@@ -26,8 +26,8 @@ debug = false
 [dependencies]
 clap = "2.20"
 derive-error = "0.0.3"
-isatty = "0.1.3"
-tar = "0.4.11"
+nix = "0.8.1"
+tar = "0.4.13"
 reapfrog = "0.2.0"
 platter-walk = "0.1.2"
 

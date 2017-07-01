@@ -8,14 +8,13 @@ Optimizations compared to gnu tar:
 
 * directory traversal based on physical disk layout. see [platter-walk](https://github.com/the8472/platter-walk) crate 
 * readaheads across multiple files at once to keep the drive's command queue filled. see [reapfrog](https://github.com/the8472/reapfrog) crate
-* drops disk caches for files onces they are read to prevent disk buffer thrashing.
+* drops disk caches for files once they are read to prevent disk buffer thrashing.
 
 
 Current limitations:
 
 * arguments must be directories
-* only archives regular files, not symlinks
-* filenames longer than 100 bytes are not supported (implementation isn't difficult, just the `tar-rs` API being clunky)
+* only archives regular files, not symlinks or empty directories
 
 ## Benchmarks
 
