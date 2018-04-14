@@ -16,6 +16,12 @@ Current limitations:
 * arguments must be directories
 * only archives regular files, not symlinks or empty directories
 
+## Building
+
+* indirect dependencies: libz, liblzo headers
+* `cargo build --release`
+* `cargo +nightly build --release --features system_alloc` for smaller binary size
+
 ## Benchmarks
 
 ```
