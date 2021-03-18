@@ -11,10 +11,13 @@ Optimizations compared to gnu tar:
 * drops disk caches for files once they are read to prevent disk buffer thrashing.
 
 
-Current limitations:
+Limitations compared to gnu tar:
 
 * arguments must be directories
 * only archives regular files, not symlinks or empty directories
+* xattrs are not included
+* sparse files are zero-filled
+* hardlinks are not encoded as such in the archive and instead stored multiple times (issue #3)
 
 ## Building
 
