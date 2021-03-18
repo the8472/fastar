@@ -110,8 +110,9 @@ fn process_args() -> std::result::Result<(), CliError> {
                 builder.append_data(&mut header, &p, &mut reader)?
             }
         }
-
     }
+
+    builder.into_inner()?;
 
     Ok(())
 }
