@@ -27,7 +27,6 @@ extern crate platter_walk;
 extern crate tar;
 extern crate nix;
 
-use std::error::Error;
 use std::io::*;
 use std::path::Path;
 use clap::{Arg, App};
@@ -97,10 +96,11 @@ fn process_args() -> std::result::Result<(), CliError> {
         match reap.next() {
             None => break,
             Some(Err(e)) => {
-                writeln!(std::io::stderr(),"{}", e.description()).unwrap();
+                eprintln!("{}", e);
             }
             Some(Ok(mut reader)) => {
                 let mut p = reader.path().to_owned();
+                let meta = reader.metadata();
                 //writeln!(std::io::stderr(), "before strip {}", p.to_string_lossy())?;
                 for path in &starting_points {
                     if p.starts_with(path) {
@@ -110,7 +110,7 @@ fn process_args() -> std::result::Result<(), CliError> {
                 //writeln!(std::io::stderr(), "after strip {}", p.to_string_lossy())?;
 
                 let mut header = Header::new_gnu();
-                header.set_metadata_in_mode(&reader.metadata(), HeaderMode::Deterministic);
+                header.set_metadata_in_mode(&meta, HeaderMode::Deterministic);
                 header.set_cksum();
                 builder.append_data(&mut header, &p, &mut reader)?
             }
@@ -129,7 +129,7 @@ fn main() {
             std::process::exit(0);
         }
         Err(e) => {
-            writeln!(std::io::stderr(),"{}", e.description()).unwrap();
+            eprintln!("{}", e);
             std::io::stderr().flush().unwrap();
             std::process::exit(1);
         }
