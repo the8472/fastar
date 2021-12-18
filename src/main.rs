@@ -1,4 +1,4 @@
-//   ffcnt
+//   fastar
 //   Copyright (C) 2017 The 8472
 //
 //   This program is free software; you can redistribute it and/or modify
@@ -23,12 +23,14 @@ extern crate tar;
 extern crate nix;
 
 use std::io::*;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use clap::{Arg, App};
 use platter_walk::*;
 use std::fs::File;
-use tar::{Builder, Header, HeaderMode};
+use tar::{Builder, Header, HeaderMode, EntryType};
 use std::os::unix::io::{FromRawFd, AsRawFd};
+use std::collections::HashMap;
+use std::os::linux::fs::MetadataExt;
 
 #[derive(Debug, Error)]
 enum CliError {
@@ -37,9 +39,15 @@ enum CliError {
     OutputIsATty
 }
 
+struct Config {
+    starting_points: Vec<PathBuf>,
+    order: Order,
+    out: File,
+}
 
-fn process_args() -> std::result::Result<(), CliError> {
-    let matches = App::new("fast tar archive creator")
+
+fn process_args() -> std::result::Result<Config, CliError> {
+    let matches = App::new("fast tar archive creator (for HDDs)")
         .version(crate_version!())
         .arg(Arg::with_name("ord").long("leaf-order").required(false).takes_value(true).possible_values(&["inode","content", "dentry"]).help("optimize order for listing/stat/reads"))
         .arg(Arg::with_name("out").short("f").required(false).takes_value(true).help("write output to file instead of stdout"))
@@ -52,27 +60,13 @@ fn process_args() -> std::result::Result<(), CliError> {
         starting_points.push(std::env::current_dir()?);
     }
 
-    let mut dir_scanner = ToScan::new();
-
-    dir_scanner.set_order(Order::Content);
-
-    match matches.value_of("ord") {
-        Some("inode") => {dir_scanner.set_order(Order::Inode);},
-        Some("content") => {dir_scanner.set_order(Order::Content);}
-        Some("dentry") => {dir_scanner.set_order(Order::Dentries);}
-        _ => {}
+    let order = match matches.value_of("ord") {
+        Some("inode") => Order::Inode,
+        Some("content") =>Order::Content,
+        Some("dentry") => Order::Dentries,
+        _ => Order::Content
     };
 
-    for path in &starting_points {
-        dir_scanner.add_root(path.to_owned())?;
-    }
-
-
-    dir_scanner.set_prefilter(Box::new(move |_,ft| ft.is_file()));
-
-    let it = dir_scanner.filter_map(|e| e.ok()).map(|e| e.path().to_owned());
-    let mut reap = reapfrog::MultiFileReadahead::new(it);
-    reap.dropbehind(true);
 
     const STDOUT : i32 = 1;
 
@@ -85,7 +79,32 @@ fn process_args() -> std::result::Result<(), CliError> {
         return Err(CliError::OutputIsATty)
     }
 
-    let mut builder = Builder::new(BufWriter::new(out));
+    Ok(Config {
+        out,
+        starting_points,
+        order
+    })
+}
+
+fn archive(config: Config) -> std::result::Result<(), CliError> {
+
+    let mut dir_scanner = ToScan::new();
+
+    dir_scanner.set_order(config.order);
+
+    for path in &config.starting_points {
+        dir_scanner.add_root(path.to_owned())?;
+    }
+
+    dir_scanner.set_prefilter(Box::new(move |_,ft| ft.is_file()));
+
+    let it = dir_scanner.filter_map(|e| e.ok()).map(|e| e.path().to_owned());
+    let mut reap = reapfrog::MultiFileReadahead::new(it);
+    reap.dropbehind(true);
+
+
+    let mut builder = Builder::new(BufWriter::new(config.out));
+    let mut hardlinks: HashMap<(u64, u64), PathBuf> = HashMap::new();
 
     loop {
         match reap.next() {
@@ -96,13 +115,26 @@ fn process_args() -> std::result::Result<(), CliError> {
             Some(Ok(mut reader)) => {
                 let mut p = reader.path().to_owned();
                 let meta = reader.metadata();
-                //writeln!(std::io::stderr(), "before strip {}", p.to_string_lossy())?;
-                for path in &starting_points {
+
+                for path in &config.starting_points {
                     if p.starts_with(path) {
                         p = p.strip_prefix(path).unwrap().to_owned();
                     }
                 }
-                //writeln!(std::io::stderr(), "after strip {}", p.to_string_lossy())?;
+
+                if meta.file_type().is_file() && meta.st_nlink() > 1 {
+                    let existing = hardlinks.entry((meta.st_dev(), meta.st_ino())).or_insert(p.clone());
+                    if existing != &p {
+                        // hardlinked file we already visited
+                        let mut header = Header::new_gnu();
+                        header.set_metadata_in_mode(&meta, HeaderMode::Deterministic);
+                        header.set_entry_type(EntryType::hard_link());
+                        header.set_cksum();
+                        builder.append_link(&mut header, &p, &existing)?;
+
+                        continue;
+                    }
+                }
 
                 let mut header = Header::new_gnu();
                 header.set_metadata_in_mode(&meta, HeaderMode::Deterministic);
@@ -118,16 +150,43 @@ fn process_args() -> std::result::Result<(), CliError> {
 }
 
 
-fn main() {
+fn main() -> std::result::Result<(), CliError> {
+    let config = process_args()?;
+    archive(config)
+}
 
-    match process_args() {
-        Ok(_) => {
-            std::process::exit(0);
-        }
-        Err(e) => {
-            eprintln!("{}", e);
-            std::io::stderr().flush().unwrap();
-            std::process::exit(1);
-        }
-    };
+
+#[cfg(test)]
+mod test {
+    use std::fs;
+    use super::*;
+
+    #[test]
+    fn test_hardlinks() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let tmp_path = tempdir.path();
+
+        let out = File::create(tmp_path.join("out.tar")).unwrap();
+        fs::create_dir(tmp_path.join("in")).unwrap();
+        fs::create_dir(tmp_path.join("unpack")).unwrap();
+        File::create(tmp_path.join("in/a")).unwrap();
+        fs::hard_link(tmp_path.join("in/a"), tmp_path.join("in/b")).unwrap();
+
+        let config = Config {
+            out,
+            starting_points: vec![tmp_path.join("in").to_path_buf()],
+            order: Order::Content
+        };
+
+        archive(config).unwrap();
+
+        let mut archive = tar::Archive::new(File::open(tmp_path.join("out.tar")).unwrap());
+
+        archive.unpack(tmp_path.join("unpack")).unwrap();
+
+        assert!(tmp_path.join("unpack/a").exists());
+        assert!(tmp_path.join("unpack/b").exists());
+
+        assert_eq!(2, fs::read_dir(tmp_path.join("unpack")).unwrap().filter(|e| e.as_ref().unwrap().metadata().unwrap().st_nlink() == 2).count(), "two files, one hardlink");
+    }
 }

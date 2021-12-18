@@ -17,13 +17,12 @@ Limitations compared to gnu tar:
 * only archives regular files, not symlinks or empty directories
 * xattrs are not included
 * sparse files are zero-filled
-* hardlinks are not encoded as such in the archive and instead stored multiple times (issue #3)
+
 
 ## Building
 
 * indirect dependencies: libz, liblzo headers
 * `cargo build --release`
-* `cargo +nightly build --release --features system_alloc` for smaller binary size
 
 ## Benchmarks
 
